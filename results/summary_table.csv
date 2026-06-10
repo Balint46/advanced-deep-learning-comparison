@@ -1,0 +1,1 @@
+dataset,model_name,training_strategy,head_type,learning_rate,batch_size,weight_decay,epochs,frozen_epochs,top1_accuracy,top5_accuracy,test_loss,best_val_loss,best_val_epoch,num_parameters,trainable_parameters,average_time_per_epoch,total_training_time,seed,generalization_gap,experiment_id

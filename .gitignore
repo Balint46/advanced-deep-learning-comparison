@@ -14,6 +14,8 @@ results/*.csv
 results/plots/*.png
 results/plots/*.pdf
 !results/.gitkeep
+!results/metrics.csv
+!results/summary_table.csv
 !results/plots/.gitkeep
 
 .ipynb_checkpoints/
