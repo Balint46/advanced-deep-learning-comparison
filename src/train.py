@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from .evaluate import evaluate
 from .metrics import AverageMeter, topk_accuracy
+from .models import freeze_backbone, unfreeze_all
+from .utils import count_parameters
+
+
+TRAINING_STRATEGIES = {"full_training", "head_only", "freeze_then_unfreeze"}
+
+
+@dataclass(frozen=True)
+class TrainingResult:
+    history: list[dict[str, float | int | str]]
+    best_val_loss: float
+    best_val_epoch: int
+    total_training_time: float
+    average_time_per_epoch: float
 
 
 def train_one_epoch(
@@ -51,3 +68,121 @@ def train_one_epoch(
         "top5": top5.avg,
         "time": time.perf_counter() - start,
     }
+
+
+def _make_optimizer(
+    model: nn.Module,
+    learning_rate: float,
+    weight_decay: float,
+) -> torch.optim.Optimizer:
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    if not trainable_params:
+        raise ValueError("No trainable parameters available for the optimizer.")
+    return torch.optim.AdamW(
+        trainable_params,
+        lr=learning_rate,
+        weight_decay=weight_decay,
+    )
+
+
+def _apply_strategy_at_start(model: nn.Module, strategy: str) -> None:
+    if strategy == "full_training":
+        unfreeze_all(model)
+    elif strategy in {"head_only", "freeze_then_unfreeze"}:
+        freeze_backbone(model)
+    else:
+        raise ValueError(
+            f"Unsupported training_strategy '{strategy}'. "
+            f"Choose from {sorted(TRAINING_STRATEGIES)}."
+        )
+
+
+def train_model(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    device: torch.device,
+    epochs: int,
+    learning_rate: float,
+    weight_decay: float,
+    training_strategy: str,
+    frozen_epochs: int = 0,
+    checkpoint_path: Path | None = None,
+    fine_tune_lr_multiplier: float = 0.1,
+) -> TrainingResult:
+    """Train a model with full, head-only, or freeze-then-unfreeze strategy."""
+    training_strategy = training_strategy.lower()
+    _apply_strategy_at_start(model, training_strategy)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = _make_optimizer(model, learning_rate, weight_decay)
+    model.to(device)
+
+    history: list[dict[str, float | int | str]] = []
+    best_val_loss = float("inf")
+    best_val_epoch = 0
+    total_start = time.perf_counter()
+
+    for epoch in range(1, epochs + 1):
+        if training_strategy == "freeze_then_unfreeze" and epoch == frozen_epochs + 1:
+            unfreeze_all(model)
+            optimizer = _make_optimizer(
+                model,
+                learning_rate * fine_tune_lr_multiplier,
+                weight_decay,
+            )
+
+        train_metrics = train_one_epoch(
+            model=model,
+            dataloader=train_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
+            epoch=epoch,
+        )
+        val_metrics = evaluate(
+            model=model,
+            dataloader=val_loader,
+            criterion=criterion,
+            device=device,
+            desc=f"Validation {epoch}",
+        )
+
+        if val_metrics["loss"] < best_val_loss:
+            best_val_loss = val_metrics["loss"]
+            best_val_epoch = epoch
+            if checkpoint_path is not None:
+                checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "val_loss": best_val_loss,
+                    },
+                    checkpoint_path,
+                )
+
+        history.append(
+            {
+                "epoch": epoch,
+                "phase": "train_val",
+                "train_loss": train_metrics["loss"],
+                "train_top1": train_metrics["top1"],
+                "train_top5": train_metrics["top5"],
+                "val_loss": val_metrics["loss"],
+                "val_top1": val_metrics["top1"],
+                "val_top5": val_metrics["top5"],
+                "epoch_time": train_metrics["time"],
+                "trainable_parameters": count_parameters(model, trainable_only=True),
+            }
+        )
+
+    total_training_time = time.perf_counter() - total_start
+    average_time = sum(float(row["epoch_time"]) for row in history) / max(1, len(history))
+    return TrainingResult(
+        history=history,
+        best_val_loss=best_val_loss,
+        best_val_epoch=best_val_epoch,
+        total_training_time=total_training_time,
+        average_time_per_epoch=average_time,
+    )
