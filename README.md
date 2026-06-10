@@ -116,6 +116,18 @@ python run_experiments.py --mode plots
 
 Plots are saved in `results/plots/`.
 
+Evaluate a saved checkpoint without retraining:
+
+```bash
+python evaluate_checkpoint.py checkpoints/cifar10_resnet18_head_only_one_hidden_best.pth
+```
+
+Each training run writes the best validation-accuracy checkpoint to:
+
+```text
+checkpoints/{dataset}_{model_name}_{training_strategy}_{head_type}_best.pth
+```
+
 ## Plots
 
 The plotting module generates:
