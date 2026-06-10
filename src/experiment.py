@@ -47,6 +47,13 @@ class ExperimentConfig:
             f"{self.head_type}_lr{lr}_bs{self.batch_size}_wd{wd}_seed{self.seed}"
         )
 
+    @property
+    def checkpoint_name(self) -> str:
+        return (
+            f"{self.dataset}_{self.model_name}_{self.training_strategy}_"
+            f"{self.head_type}_best.pth"
+        )
+
 
 def _append_csv(path: Path, rows: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,7 +84,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
         pretrained=config.pretrained,
     )
 
-    checkpoint_path = CHECKPOINT_DIR / f"{config.experiment_id}.pt"
+    checkpoint_path = CHECKPOINT_DIR / config.checkpoint_name
+    config_dict = asdict(config)
     training_result = train_model(
         model=model,
         train_loader=loaders.train,
@@ -89,6 +97,14 @@ def run_experiment(config: ExperimentConfig) -> dict:
         training_strategy=config.training_strategy,
         frozen_epochs=config.frozen_epochs,
         checkpoint_path=checkpoint_path,
+        checkpoint_metadata={
+            "dataset": config.dataset,
+            "model_name": config.model_name,
+            "num_classes": loaders.num_classes,
+            "head_type": config.head_type,
+            "training_strategy": config.training_strategy,
+            "config": config_dict,
+        },
     )
 
     if checkpoint_path.exists():
@@ -132,6 +148,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
         "top5_accuracy": test_metrics["top5"],
         "test_loss": test_metrics["loss"],
         "best_val_loss": training_result.best_val_loss,
+        "best_val_top1": training_result.best_val_top1,
+        "best_val_top5": training_result.best_val_top5,
         "best_val_epoch": training_result.best_val_epoch,
         "num_parameters": total_params,
         "trainable_parameters": trainable_params,
@@ -143,7 +161,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
     }
     _append_csv(SUMMARY_PATH, [summary])
 
-    return {**summary, "config": asdict(config)}
+    return {**summary, "config": config_dict}
 
 
 def configs_from_dicts(items: list[dict]) -> list[ExperimentConfig]:

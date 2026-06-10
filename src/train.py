@@ -24,6 +24,8 @@ TRAINING_STRATEGIES = {"full_training", "head_only", "freeze_then_unfreeze"}
 class TrainingResult:
     history: list[dict[str, float | int | str]]
     best_val_loss: float
+    best_val_top1: float
+    best_val_top5: float
     best_val_epoch: int
     total_training_time: float
     average_time_per_epoch: float
@@ -108,6 +110,7 @@ def train_model(
     training_strategy: str,
     frozen_epochs: int = 0,
     checkpoint_path: Path | None = None,
+    checkpoint_metadata: dict | None = None,
     fine_tune_lr_multiplier: float = 0.1,
 ) -> TrainingResult:
     """Train a model with full, head-only, or freeze-then-unfreeze strategy."""
@@ -120,6 +123,8 @@ def train_model(
 
     history: list[dict[str, float | int | str]] = []
     best_val_loss = float("inf")
+    best_val_top1 = float("-inf")
+    best_val_top5 = float("-inf")
     best_val_epoch = 0
     total_start = time.perf_counter()
 
@@ -148,16 +153,22 @@ def train_model(
             desc=f"Validation {epoch}",
         )
 
-        if val_metrics["loss"] < best_val_loss:
+        if val_metrics["top1"] > best_val_top1:
             best_val_loss = val_metrics["loss"]
+            best_val_top1 = val_metrics["top1"]
+            best_val_top5 = val_metrics["top5"]
             best_val_epoch = epoch
             if checkpoint_path is not None:
                 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(
                     {
                         "epoch": epoch,
+                        **(checkpoint_metadata or {}),
                         "model_state_dict": model.state_dict(),
-                        "val_loss": best_val_loss,
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "best_val_loss": best_val_loss,
+                        "best_val_top1": best_val_top1,
+                        "best_val_top5": best_val_top5,
                     },
                     checkpoint_path,
                 )
@@ -182,6 +193,8 @@ def train_model(
     return TrainingResult(
         history=history,
         best_val_loss=best_val_loss,
+        best_val_top1=best_val_top1,
+        best_val_top5=best_val_top5,
         best_val_epoch=best_val_epoch,
         total_training_time=total_training_time,
         average_time_per_epoch=average_time,
