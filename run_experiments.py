@@ -6,7 +6,12 @@ import argparse
 import json
 from pathlib import Path
 
-from src.experiment import configs_from_dicts, run_experiment
+from src.experiment import (
+    configs_from_dicts,
+    make_cifar100_configs_from_best,
+    make_hyperparameter_search_configs,
+    run_experiment,
+)
 from src.utils import PROJECT_ROOT
 
 
@@ -24,10 +29,24 @@ def main() -> None:
         default=None,
         help="Optionally run only the first N experiments.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["default", "search", "cifar100-from-best"],
+        default="default",
+        help="Run default experiments, CIFAR-10 grid search, or CIFAR-100 reuse.",
+    )
     args = parser.parse_args()
 
-    config_data = json.loads(args.config.read_text(encoding="utf-8"))
-    configs = configs_from_dicts(config_data["experiments"])
+    if args.mode == "search":
+        search_path = PROJECT_ROOT / "configs" / "hyperparameter_search.json"
+        search_data = json.loads(search_path.read_text(encoding="utf-8"))
+        configs = make_hyperparameter_search_configs(search_data)
+    elif args.mode == "cifar100-from-best":
+        configs = make_cifar100_configs_from_best()
+    else:
+        config_data = json.loads(args.config.read_text(encoding="utf-8"))
+        configs = configs_from_dicts(config_data["experiments"])
+
     if args.limit is not None:
         configs = configs[: args.limit]
 

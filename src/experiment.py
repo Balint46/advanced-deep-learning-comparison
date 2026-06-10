@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from itertools import product
 from pathlib import Path
 
 import pandas as pd
@@ -147,3 +148,78 @@ def run_experiment(config: ExperimentConfig) -> dict:
 
 def configs_from_dicts(items: list[dict]) -> list[ExperimentConfig]:
     return [ExperimentConfig(**item) for item in items]
+
+
+def make_hyperparameter_search_configs(search_config: dict) -> list[ExperimentConfig]:
+    """Create the constrained CIFAR-10 grid search requested in the assignment."""
+    configs: list[ExperimentConfig] = []
+    for model_name, learning_rate, batch_size, weight_decay in product(
+        search_config["models"],
+        search_config["learning_rates"],
+        search_config["batch_sizes"],
+        search_config["weight_decays"],
+    ):
+        configs.append(
+            ExperimentConfig(
+                dataset=search_config.get("dataset", "cifar10"),
+                model_name=model_name,
+                training_strategy=search_config.get("training_strategy", "freeze_then_unfreeze"),
+                head_type=search_config.get("head_type", "linear"),
+                learning_rate=learning_rate,
+                batch_size=batch_size,
+                weight_decay=weight_decay,
+                epochs=search_config.get("epochs", 4),
+                frozen_epochs=search_config.get("frozen_epochs", 2),
+                seed=search_config.get("seed", 42),
+                pretrained=search_config.get("pretrained", True),
+            )
+        )
+    return configs
+
+
+def best_hyperparameters_by_model(summary_path: Path = SUMMARY_PATH) -> dict[str, dict]:
+    """Return the best CIFAR-10 row per model using test top-1 accuracy."""
+    if not summary_path.exists():
+        raise FileNotFoundError(
+            f"No summary table found at {summary_path}. Run the CIFAR-10 search first."
+        )
+
+    summary = pd.read_csv(summary_path)
+    candidates = summary[
+        (summary["dataset"] == "cifar10")
+        & (summary["model_name"].isin(["resnet18", "vit_tiny"]))
+    ]
+    if candidates.empty:
+        raise ValueError("No CIFAR-10 ResNet18 or ViT-Tiny rows found in summary_table.csv.")
+
+    best_rows = candidates.sort_values("top1_accuracy", ascending=False).groupby("model_name")
+    return {
+        model_name: group.iloc[0].to_dict()
+        for model_name, group in best_rows
+    }
+
+
+def make_cifar100_configs_from_best(
+    summary_path: Path = SUMMARY_PATH,
+    epochs: int = 4,
+) -> list[ExperimentConfig]:
+    """Reuse the best CIFAR-10 hyperparameters for CIFAR-100 experiments."""
+    best = best_hyperparameters_by_model(summary_path)
+    configs = []
+    for row in best.values():
+        configs.append(
+            ExperimentConfig(
+                dataset="cifar100",
+                model_name=row["model_name"],
+                training_strategy=row["training_strategy"],
+                head_type=row["head_type"],
+                learning_rate=float(row["learning_rate"]),
+                batch_size=int(row["batch_size"]),
+                weight_decay=float(row["weight_decay"]),
+                epochs=epochs,
+                frozen_epochs=int(row["frozen_epochs"]),
+                seed=int(row["seed"]),
+                pretrained=True,
+            )
+        )
+    return configs

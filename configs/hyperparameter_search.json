@@ -1,0 +1,13 @@
+{
+  "models": ["resnet18", "vit_tiny"],
+  "dataset": "cifar10",
+  "training_strategy": "freeze_then_unfreeze",
+  "head_type": "linear",
+  "learning_rates": [0.0001, 0.0003, 0.001],
+  "batch_sizes": [64, 128],
+  "weight_decays": [0.0001],
+  "epochs": 4,
+  "frozen_epochs": 2,
+  "seed": 42,
+  "pretrained": true
+}
