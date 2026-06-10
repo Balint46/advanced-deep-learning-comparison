@@ -12,6 +12,7 @@ from src.experiment import (
     make_hyperparameter_search_configs,
     run_experiment,
 )
+from src.plots import generate_all_plots
 from src.utils import PROJECT_ROOT
 
 
@@ -31,11 +32,16 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=["default", "search", "cifar100-from-best"],
+        choices=["default", "search", "cifar100-from-best", "plots"],
         default="default",
         help="Run default experiments, CIFAR-10 grid search, or CIFAR-100 reuse.",
     )
     args = parser.parse_args()
+
+    if args.mode == "plots":
+        generate_all_plots()
+        print("Plots saved to results/plots/")
+        return
 
     if args.mode == "search":
         search_path = PROJECT_ROOT / "configs" / "hyperparameter_search.json"
