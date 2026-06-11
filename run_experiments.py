@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
 from src.experiment import (
+    SUMMARY_PATH,
     configs_from_dicts,
     make_cifar100_configs_from_best,
     make_hyperparameter_search_configs,
@@ -14,6 +16,22 @@ from src.experiment import (
 )
 from src.plots import generate_all_plots
 from src.utils import PROJECT_ROOT
+
+
+def load_existing_experiment_ids(summary_path: Path = SUMMARY_PATH) -> set[str]:
+    """Read completed experiment IDs from the summary CSV."""
+    if not summary_path.exists() or summary_path.stat().st_size == 0:
+        return set()
+
+    with summary_path.open("r", encoding="utf-8", newline="") as file:
+        reader = csv.DictReader(file)
+        if not reader.fieldnames or "experiment_id" not in reader.fieldnames:
+            return set()
+        return {
+            row["experiment_id"]
+            for row in reader
+            if row.get("experiment_id")
+        }
 
 
 def main() -> None:
@@ -56,9 +74,15 @@ def main() -> None:
     if args.limit is not None:
         configs = configs[: args.limit]
 
+    existing_experiment_ids = load_existing_experiment_ids()
     for index, config in enumerate(configs, start=1):
+        if config.experiment_id in existing_experiment_ids:
+            print(f"Skipping existing experiment: {config.experiment_id}")
+            continue
+
         print(f"[{index}/{len(configs)}] Running {config.experiment_id}")
         summary = run_experiment(config)
+        existing_experiment_ids.add(config.experiment_id)
         print(
             f"Done: top1={summary['top1_accuracy']:.2f}, "
             f"top5={summary['top5_accuracy']:.2f}, "
