@@ -19,3 +19,4 @@ results/plots/*.pdf
 !results/plots/.gitkeep
 
 .ipynb_checkpoints/
+.vscode/
