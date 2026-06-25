@@ -1,0 +1,398 @@
+\documentclass{beamer}
+\usetheme{Madrid}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% To display speaker notes on a second screen, uncomment both lines below:
+% \usepackage{pgfpages}
+% \setbeameroption{show notes on second screen=right}
+
+\title[CNN vs Transformer]{Comparing CNN and Transformer Architectures\\for Image Classification}
+\subtitle{Advanced Deep Learning --- Project Presentation}
+\author[B.~D.~Kir\'{a}ly]{B\'{a}lint D\'{a}niel Kir\'{a}ly}
+\institute{E\"{o}tv\"{o}s Lor\'{a}nd University}
+\date{June 2026}
+
+% Fix footer: author | short title | date | frame/total
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=.333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+      \usebeamerfont{author in head/foot}\insertshortauthor
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.334\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}CNN vs Transformer
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.166\paperwidth,ht=2.25ex,dp=1ex,center]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertshortdate
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.166\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}%
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}
+    \end{beamercolorbox}%
+  }%
+  \vskip0pt%
+}
+
+\begin{document}
+
+% ---------------------------------------------------------------
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{The Task}
+
+  \textbf{Objective:} Compare multiple CNN and Transformer models on image classification.
+
+  \bigskip
+  \textbf{Models:}
+  \begin{itemize}
+    \item Small CNN (trained from scratch)
+    \item ResNet-18 (pretrained on ImageNet)
+    \item ViT-Tiny (pretrained on ImageNet)
+  \end{itemize}
+
+  \bigskip
+  \textbf{Datasets:} CIFAR-10 (10 classes) and CIFAR-100 (100 classes)
+
+  \bigskip
+  \textbf{Variables:} training strategy, classifier-head depth, and hyperparameters;
+  comparison on multiple metrics.
+
+  \note{This was an open-ended ``compare CNNs and Transformers'' brief.
+  I turned it into a controlled set of ablations --- varying training strategy,
+  head depth, and hyperparameters --- so that differences between models could be
+  attributed to the right cause rather than confounded by the training recipe.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Experimental Setup}
+
+  \begin{columns}
+    \column{0.55\textwidth}
+
+      \textbf{Models:}
+
+      \medskip
+      \small
+      \renewcommand{\arraystretch}{1.3}
+      \begin{tabular}{@{}lllr@{}}
+        \toprule
+        Model      & Type        & Pretrained & Params \\
+        \midrule
+        small\_cnn & CNN         & No  & 141{,}354 \\
+        ResNet-18  & CNN         & Yes & 11{,}181{,}642 \\
+        ViT-Tiny   & Transformer & Yes & 5{,}489{,}482 \\
+        \bottomrule
+      \end{tabular}
+
+    \column{0.42\textwidth}
+
+      \textbf{Protocol:}
+      \begin{itemize}
+        \item Early stopping (patience~5, max~20 epochs) with best-weight restoration
+        \item 3 seeds (42\,/\,123\,/\,7) for the core comparison --- error bars confirm the ranking is real
+        \item All cross-model comparisons locked to \emph{full fine-tuning + linear head}: differences reflect the \emph{model}, not the recipe
+      \end{itemize}
+
+  \end{columns}
+
+  \note{Emphasise the fairness design. Early stopping gives every model the same
+  convergence opportunity, and best-weight restoration ensures the reported number
+  is the actual peak rather than a later overfit checkpoint. Three seeds show the
+  ranking is stable, not a lucky draw. The fixed training condition is essential
+  for attribution: you cannot claim one architecture beats another if the recipes differ.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Metrics}
+
+  \textbf{Accuracy:} Top-1 and Top-5 validation accuracy
+
+  \bigskip
+  \textbf{Loss:} Best validation loss (cross-entropy)
+
+  \bigskip
+  \textbf{Model cost:} Trainable vs.\ total parameters;
+  time per epoch; throughput (samples/sec)
+
+  \bigskip
+  \textbf{Generalisation gap:} Training Top-1 $-$ Validation Top-1
+
+  \bigskip
+  \textit{Note:} Top-5 is uninformative on CIFAR-10 (10 classes
+  $\Rightarrow$ $\approx$99\,\% for all models) but becomes meaningful on CIFAR-100.
+
+  \note{Explain why we report Top-5 but do not emphasise it on CIFAR-10: with only ten
+  classes the correct answer is almost always in every model's top five, so the metric
+  does not discriminate. On CIFAR-100 it becomes a useful secondary signal that separates
+  models more clearly than Top-1 alone.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Core Comparison: CIFAR-10}
+
+  \begin{center}
+    \includegraphics[width=0.78\textwidth]{results/plots/core_comparison_cifar10.png}
+  \end{center}
+
+  \textbf{Under identical full fine-tuning} (mean\,$\pm$\,std over 3 seeds):
+  \begin{itemize}
+    \item ResNet-18: \textbf{85.5\,\%} \quad Small CNN: 81.3\,\% \quad ViT-Tiny: 69.4\,\%
+    \item Tight error bars --- the ranking is real, not seed noise
+  \end{itemize}
+
+  \note{This is the headline result. Announce it clearly, but then immediately flag that
+  ViT's low number reflects \emph{training difficulty}, not architectural capacity.
+  The next two slides provide the evidence. Do not let this be read as ``CNNs beat
+  Transformers'' until the audience has seen the full picture.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Training Dynamics}
+
+  \begin{center}
+    \includegraphics[width=0.80\textwidth]{results/plots/convergence_curves_cifar10.png}
+  \end{center}
+
+  \begin{itemize}
+    \item ResNet-18 converges fastest and reaches the lowest validation loss
+    \item ViT-Tiny is slowest and plateaus at the highest loss
+    \item All runs are clearly converged --- the comparison is valid, not under-trained
+  \end{itemize}
+
+  \note{Use this as the ``results are trustworthy'' evidence. Every model ran to
+  convergence under early stopping with best-weight restoration, so the accuracy figures
+  are not underestimates from stopping too early. The curves also give the visual
+  intuition that ViT is harder to optimise on this dataset, which sets up the key
+  finding on the following slides.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Training Strategy Matters}
+
+  \begin{center}
+    \includegraphics[width=0.80\textwidth]{results/plots/strategy_comparison_cifar10.png}
+  \end{center}
+
+  \textbf{Pretrained backbones, CIFAR-10:}
+  \begin{itemize}
+    \item ResNet-18: full 85.5\,\% \;/\; freeze$\!\to\!$unfreeze 80.7\,\% \;/\; head-only 41.5\,\%
+    \item ViT-Tiny:\phantom{xx} full 71.4\,\% \;/\; freeze$\!\to\!$unfreeze 79.7\,\% \;/\; head-only 40.0\,\%
+    \item Head-only $\approx$40\,\% for both: frozen ImageNet features do not transfer to 32$\times$32 CIFAR images
+    \item ViT \emph{gains} from staged unfreezing; ResNet does not need it
+  \end{itemize}
+
+  \note{The head-only failure is the same conceptual point for both models: the scale
+  mismatch between ImageNet (224$\times$224) and CIFAR (32$\times$32) means frozen backbone
+  features are wrong-scale. More interesting is that ViT benefits substantially from staged
+  unfreezing while ResNet does not --- an early signal that ViT's optimisation is more
+  sensitive to how training is structured.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Key Finding: ViT's Gap Is a Trainability Artifact}
+
+  \begin{center}
+    \includegraphics[width=0.78\textwidth]{results/plots/vit_lr_sensitivity_cifar10.png}
+  \end{center}
+
+  \textbf{ViT-Tiny full fine-tuning, varying learning rate:}
+  \begin{itemize}
+    \item lr $10^{-3}$ $\to$ 71.4\,\% \quad lr $3{\times}10^{-4}$ $\to$ 77.8\,\% \quad lr $10^{-4}$ $\to$ 79.7\,\%
+    \item A gentler lr closes $\approx$8 points, nearly matching the CNNs
+    \item Freeze$\!\to\!$unfreeze independently recovers to the same $\approx$80\,\%
+  \end{itemize}
+
+  \textit{Conclusion: ViT-Tiny is highly sensitive to fine-tuning choices;
+  lr $10^{-3}$ is too aggressive. Do not read the core result as
+  ``CNNs beat Transformers.''}
+
+  \note{This is the intellectually honest centrepiece of the talk. Two entirely independent
+  lines of evidence --- reducing the learning rate, and using staged unfreezing ---
+  both converge on ViT reaching $\approx$80\,\%, closing most of the gap to ResNet.
+  The weakness is in optimisation strategy, not in architectural capacity. Make this
+  point explicitly before moving on.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Classifier Head Depth}
+
+  \begin{center}
+    \includegraphics[width=0.80\textwidth]{results/plots/head_depth_cifar10.png}
+  \end{center}
+
+  \begin{itemize}
+    \item Linear / one-hidden / two-hidden differ by $\lesssim$1 point for small CNN and ResNet-18
+    \item Deeper heads \emph{hurt} ViT-Tiny: 71.4\,\% $\to$ 66.8\,\%
+    \item A linear head is sufficient; extra head capacity adds overfitting risk
+  \end{itemize}
+
+  \note{Quick slide with a clean negative result. Adding hidden layers to the classifier
+  head does not help, and for ViT it actively hurts --- likely because the deeper head
+  amplifies the same optimisation instability we saw in the learning-rate slide.
+  The practical default should be a single linear classifier on top of the backbone.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Hyperparameter Sensitivity}
+
+  \begin{center}
+    \includegraphics[width=0.80\textwidth]{results/plots/hp_sensitivity_resnet18.png}
+  \end{center}
+
+  \textbf{ResNet-18 freeze$\!\to\!$unfreeze, varying lr and batch size:}
+  \begin{itemize}
+    \item Learning rate dominates: 60\,\% $\to$ 72\,\% $\to$ 81\,\%
+          across lr $10^{-4}$ / $3{\times}10^{-4}$ / $10^{-3}$
+    \item Batch size 64 vs.\ 128 is a minor effect at each lr level
+    \item \textbf{Takeaway:} spend the tuning budget on learning rate
+  \end{itemize}
+
+  \note{This connects directly to the ViT learning-rate slide: across all models, lr is
+  the dominant knob. Batch size matters far less. If you have a limited tuning budget for
+  any image-classification transfer-learning problem, the learning rate is always the first
+  and most important thing to tune.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Scaling to a Harder Dataset: CIFAR-100}
+
+  \begin{columns}
+    \column{0.50\textwidth}
+      \includegraphics[width=\textwidth]{results/plots/dataset_scaling.png}
+    \column{0.48\textwidth}
+      \includegraphics[width=\textwidth]{results/plots/top5_cifar100.png}
+  \end{columns}
+
+  \bigskip
+  \textbf{CIFAR-10 $\to$ CIFAR-100:}
+  ResNet 85.5$\to$58.6 \,/\, small CNN 82.2$\to$55.0 \,/\, ViT 71.4$\to$43.2
+
+  \begin{itemize}
+    \item All drop $\approx$25--30 pts; \textbf{ordering is preserved}
+    \item Top-5 on CIFAR-100 (84.5\,/\,83.2\,/\,72.8) is now informative
+    \item Large models overfit on CIFAR-100 (gen.\ gap: ResNet $+18.6$, ViT $+16.7$) --- stronger regularisation is future work
+    \item small\_cnn was still improving at 60 epochs; 55.0\,\% slightly underestimates its asymptote (ordering unaffected)
+  \end{itemize}
+
+  \note{Deliver the preserved ordering as the main robust claim --- it holds even on a
+  much harder 100-class task. Then cover the honest limitations: large pretrained models
+  overfit on CIFAR-100, suggesting regularisation or augmentation would help, and the
+  small CNN had not quite converged. Neither caveat changes which model is best; they are
+  honest notes for future work.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Efficiency: Accuracy vs.\ Cost}
+
+  \begin{columns}
+    \column{0.50\textwidth}
+      \includegraphics[width=\textwidth]{results/plots/params_vs_accuracy_cifar10.png}
+    \column{0.48\textwidth}
+      \includegraphics[width=\textwidth]{results/plots/average_time_per_epoch_by_model.png}
+  \end{columns}
+
+  \bigskip
+  \begin{itemize}
+    \item \textbf{small CNN:} $\sim$0.14\,M params, $\sim$25\,s/epoch, 81\,\% --- remarkably efficient
+    \item \textbf{ResNet-18:} best accuracy (85.5\,\%) at 11.2\,M params / $\sim$49\,s/epoch
+    \item \textbf{ViT-Tiny:} more params and time than small CNN for less accuracy
+          under na\"ive training (see ViT trainability slide for the full picture)
+  \end{itemize}
+
+  \note{Frame this as an accuracy-versus-cost trade-off. The small CNN is the efficiency
+  surprise of the project: for a dataset of this scale a tiny well-designed CNN punches
+  far above its weight. ResNet wins on accuracy but at 80 times the parameters. ViT's
+  cost-effectiveness improves substantially once the learning rate is tuned --- so judge
+  ViT under its best setting, not the naive default.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Conclusions}
+
+  \begin{itemize}
+    \item Under identical full fine-tuning,
+          \textbf{ResNet-18 $>$ small CNN $>$ ViT-Tiny} on CIFAR-10
+    \item ViT's gap is largely a \textbf{trainability artifact}: a gentle lr or
+          staged unfreezing closes most of it
+    \item \textbf{Transfer strategy matters} and is model-dependent;
+          frozen ImageNet features alone are poor on CIFAR
+    \item Head depth barely matters;
+          \textbf{learning rate is the dominant hyperparameter}
+    \item The harder dataset (CIFAR-100) \textbf{preserves the ranking};
+          large models overfit there
+    \item \textbf{Methodologically:} early stopping + best-weight restore +
+          multi-seed error bars make the comparison fair and trustworthy
+  \end{itemize}
+
+  \note{Spend time on this slide. Go through each bullet as one spoken sentence: state
+  the finding, then its significance. Linger on the methodological point last --- without
+  those controls (early stopping, best weights, multiple seeds) the comparison would not
+  be convincing, and those were deliberate design decisions, not defaults.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Use of Artificial Intelligence}
+
+  \textbf{Transparency Statement:}
+
+  AI tools were used in the following aspects of this project:
+  \begin{itemize}
+    \item \textbf{Code and pipeline:} the training and evaluation pipeline was
+          built iteratively with AI assistance; I reviewed every change, diagnosed
+          failures, and directed each round of redesign
+    \item \textbf{Presentation:} these slides were generated by AI based on my
+          content and requirements
+    \item \textbf{Documentation:} AI produced initial drafts; all were
+          substantially revised before final use
+  \end{itemize}
+
+  \bigskip
+  \textit{I designed the experiments, identified the under-training issue,
+  directed the full rerun, and verified every result.
+  All interpretation is my own.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Thank You!}
+
+  \begin{center}
+    \Large Questions?
+  \end{center}
+
+  \bigskip
+  \textbf{References:}
+  \begin{itemize}
+    \item Krizhevsky, A.\ (2009). \textit{Learning Multiple Layers of Features from
+          Tiny Images}. (CIFAR-10/100 datasets)
+    \item He, K., Zhang, X., Ren, S., \& Sun, J.\ (2016).
+          \textit{Deep Residual Learning for Image Recognition}. CVPR.
+    \item Dosovitskiy, A.\ et al.\ (2021). \textit{An Image is Worth 16$\times$16
+          Words: Transformers for Image Recognition at Scale}. ICLR.
+    \item Wightman, R.\ \textit{PyTorch Image Models} (\texttt{timm}).
+          \texttt{github.com/rwightman/pytorch-image-models}
+  \end{itemize}
+
+\end{frame}
+
+\end{document}
