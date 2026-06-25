@@ -9,6 +9,7 @@ from pathlib import Path
 
 from src.experiment import (
     SUMMARY_PATH,
+    aggregate_seeds,
     configs_from_dicts,
     make_cifar100_configs_from_best,
     make_hyperparameter_search_configs,
@@ -50,15 +51,23 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=["default", "search", "cifar100-from-best", "plots"],
+        choices=["default", "search", "cifar100-from-best", "plots", "aggregate"],
         default="default",
-        help="Run default experiments, CIFAR-10 grid search, or CIFAR-100 reuse.",
+        help=(
+            "Run default experiments, CIFAR-10 grid search, CIFAR-100 reuse, "
+            "generate plots, or aggregate multi-seed results."
+        ),
     )
     args = parser.parse_args()
 
     if args.mode == "plots":
         generate_all_plots()
         print("Plots saved to results/plots/")
+        return
+
+    if args.mode == "aggregate":
+        out = aggregate_seeds()
+        print(f"Aggregated results saved to {out}")
         return
 
     if args.mode == "search":
@@ -86,7 +95,9 @@ def main() -> None:
         print(
             f"Done: top1={summary['top1_accuracy']:.2f}, "
             f"top5={summary['top5_accuracy']:.2f}, "
-            f"test_loss={summary['test_loss']:.4f}"
+            f"test_loss={summary['test_loss']:.4f}, "
+            f"epochs_run={summary['epochs_run']}, "
+            f"stopped_early={summary['stopped_early']}"
         )
 
 
