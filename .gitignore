@@ -26,3 +26,5 @@ results/plots/*.pdf
 
 # Pre-rerun result archive (data backup, not source)
 results/archive_pre_rerun/
+results/archive_pre_extension/
+results/archive_pre_smallcnn_rerun/
