@@ -19,6 +19,14 @@ from .utils import CHECKPOINT_DIR, RESULTS_DIR, count_parameters, ensure_dirs, g
 
 METRICS_PATH = RESULTS_DIR / "metrics.csv"
 SUMMARY_PATH = RESULTS_DIR / "summary_table.csv"
+AGGREGATED_PATH = RESULTS_DIR / "aggregated_summary.csv"
+
+# Config columns used for seed aggregation (everything except per-run identifiers)
+_CONFIG_COLS = [
+    "dataset", "model_name", "training_strategy", "head_type",
+    "learning_rate", "batch_size", "weight_decay", "epochs",
+    "frozen_epochs", "patience",
+]
 
 
 @dataclass(frozen=True)
@@ -32,6 +40,7 @@ class ExperimentConfig:
     weight_decay: float
     epochs: int
     frozen_epochs: int = 0
+    patience: int = 0
     seed: int = 42
     pretrained: bool = True
     device: str | None = None
@@ -70,6 +79,9 @@ def run_experiment(config: ExperimentConfig) -> dict:
     set_seed(config.seed)
     device = get_device(config.device)
 
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
     loaders = get_dataloaders(
         dataset_name=config.dataset,
         batch_size=config.batch_size,
@@ -96,6 +108,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
         weight_decay=config.weight_decay,
         training_strategy=config.training_strategy,
         frozen_epochs=config.frozen_epochs,
+        patience=config.patience,
         checkpoint_path=checkpoint_path,
         checkpoint_metadata={
             "dataset": config.dataset,
@@ -107,16 +120,30 @@ def run_experiment(config: ExperimentConfig) -> dict:
         },
     )
 
+    # train_model already restores best weights; reload checkpoint as belt-and-suspenders
     if checkpoint_path.exists():
         checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
+
+    peak_gpu_mem_mb = (
+        torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+        if torch.cuda.is_available()
+        else 0.0
+    )
 
     criterion = nn.CrossEntropyLoss()
     test_metrics = evaluate(model, loaders.test, criterion, device, desc="Testing")
     total_params = count_parameters(model)
     trainable_params = count_parameters(model, trainable_only=True)
-    last_epoch = training_result.history[-1]
-    generalization_gap = float(last_epoch["train_top1"]) - float(last_epoch["val_top1"])
+
+    # generalization gap at the best epoch (positive = overfitting)
+    best_epoch_row = training_result.history[training_result.best_val_epoch - 1]
+    generalization_gap = float(best_epoch_row["train_top1"]) - float(best_epoch_row["val_top1"])
+
+    throughput_samples_per_sec = (
+        len(loaders.train.dataset) * training_result.epochs_run
+        / training_result.total_training_time
+    )
 
     shared = {
         "experiment_id": config.experiment_id,
@@ -129,21 +156,14 @@ def run_experiment(config: ExperimentConfig) -> dict:
         "weight_decay": config.weight_decay,
         "epochs": config.epochs,
         "frozen_epochs": config.frozen_epochs,
+        "patience": config.patience,
         "seed": config.seed,
     }
     metric_rows = [{**shared, **row} for row in training_result.history]
     _append_csv(METRICS_PATH, metric_rows)
 
     summary = {
-        "dataset": config.dataset,
-        "model_name": config.model_name,
-        "training_strategy": config.training_strategy,
-        "head_type": config.head_type,
-        "learning_rate": config.learning_rate,
-        "batch_size": config.batch_size,
-        "weight_decay": config.weight_decay,
-        "epochs": config.epochs,
-        "frozen_epochs": config.frozen_epochs,
+        **shared,
         "top1_accuracy": test_metrics["top1"],
         "top5_accuracy": test_metrics["top5"],
         "test_loss": test_metrics["loss"],
@@ -151,13 +171,16 @@ def run_experiment(config: ExperimentConfig) -> dict:
         "best_val_top1": training_result.best_val_top1,
         "best_val_top5": training_result.best_val_top5,
         "best_val_epoch": training_result.best_val_epoch,
+        "epochs_run": training_result.epochs_run,
+        "best_epoch": training_result.best_val_epoch,
+        "stopped_early": training_result.stopped_early,
         "num_parameters": total_params,
         "trainable_parameters": trainable_params,
         "average_time_per_epoch": training_result.average_time_per_epoch,
         "total_training_time": training_result.total_training_time,
-        "seed": config.seed,
+        "throughput_samples_per_sec": throughput_samples_per_sec,
+        "peak_gpu_mem_mb": peak_gpu_mem_mb,
         "generalization_gap": generalization_gap,
-        "experiment_id": config.experiment_id,
     }
     _append_csv(SUMMARY_PATH, [summary])
 
@@ -186,8 +209,9 @@ def make_hyperparameter_search_configs(search_config: dict) -> list[ExperimentCo
                 learning_rate=learning_rate,
                 batch_size=batch_size,
                 weight_decay=weight_decay,
-                epochs=search_config.get("epochs", 4),
-                frozen_epochs=search_config.get("frozen_epochs", 2),
+                epochs=search_config.get("epochs", 20),
+                frozen_epochs=search_config.get("frozen_epochs", 3),
+                patience=search_config.get("patience", 0),
                 seed=search_config.get("seed", 42),
                 pretrained=search_config.get("pretrained", True),
             )
@@ -219,7 +243,7 @@ def best_hyperparameters_by_model(summary_path: Path = SUMMARY_PATH) -> dict[str
 
 def make_cifar100_configs_from_best(
     summary_path: Path = SUMMARY_PATH,
-    epochs: int = 4,
+    epochs: int = 20,
 ) -> list[ExperimentConfig]:
     """Reuse the best CIFAR-10 hyperparameters for CIFAR-100 experiments."""
     best = best_hyperparameters_by_model(summary_path)
@@ -236,8 +260,32 @@ def make_cifar100_configs_from_best(
                 weight_decay=float(row["weight_decay"]),
                 epochs=epochs,
                 frozen_epochs=int(row["frozen_epochs"]),
+                patience=int(row.get("patience", 0)),
                 seed=int(row["seed"]),
                 pretrained=True,
             )
         )
     return configs
+
+
+def aggregate_seeds(
+    summary_path: Path = SUMMARY_PATH,
+    output_path: Path = AGGREGATED_PATH,
+) -> Path:
+    """Group by config fields (excluding seed) and compute mean ± std of accuracy."""
+    df = pd.read_csv(summary_path)
+    group_cols = [c for c in _CONFIG_COLS if c in df.columns]
+    agg = (
+        df.groupby(group_cols, dropna=False)
+        .agg(
+            top1_mean=("top1_accuracy", "mean"),
+            top1_std=("top1_accuracy", "std"),
+            top5_mean=("top5_accuracy", "mean"),
+            top5_std=("top5_accuracy", "std"),
+            run_count=("top1_accuracy", "count"),
+        )
+        .reset_index()
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    agg.to_csv(output_path, index=False)
+    return output_path
