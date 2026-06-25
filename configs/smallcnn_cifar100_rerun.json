@@ -1,0 +1,19 @@
+{
+  "_design": "small_cnn CIFAR-100 re-run — epochs=60, patience=7 (previous run hit 40-epoch cap still improving)",
+  "experiments": [
+    {
+      "dataset": "cifar100",
+      "model_name": "small_cnn",
+      "training_strategy": "full_training",
+      "head_type": "linear",
+      "learning_rate": 0.001,
+      "batch_size": 64,
+      "weight_decay": 0.0001,
+      "epochs": 60,
+      "frozen_epochs": 0,
+      "patience": 7,
+      "seed": 42,
+      "pretrained": false
+    }
+  ]
+}
