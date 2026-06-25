@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,8 @@ class TrainingResult:
     best_val_epoch: int
     total_training_time: float
     average_time_per_epoch: float
+    epochs_run: int
+    stopped_early: bool
 
 
 def train_one_epoch(
@@ -109,11 +112,18 @@ def train_model(
     weight_decay: float,
     training_strategy: str,
     frozen_epochs: int = 0,
+    patience: int = 0,
     checkpoint_path: Path | None = None,
     checkpoint_metadata: dict | None = None,
     fine_tune_lr_multiplier: float = 0.1,
 ) -> TrainingResult:
-    """Train a model with full, head-only, or freeze-then-unfreeze strategy."""
+    """Train a model with full, head-only, or freeze-then-unfreeze strategy.
+
+    patience > 0 enables early stopping: training halts after `patience` consecutive
+    epochs with no improvement in val_top1, then best-epoch weights are restored.
+    For freeze_then_unfreeze the patience counter resets at the start of the unfrozen
+    phase and is not applied during the frozen warmup.
+    """
     training_strategy = training_strategy.lower()
     _apply_strategy_at_start(model, training_strategy)
 
@@ -126,6 +136,9 @@ def train_model(
     best_val_top1 = float("-inf")
     best_val_top5 = float("-inf")
     best_val_epoch = 0
+    best_state_dict = copy.deepcopy(model.state_dict())
+    patience_counter = 0
+    stopped_early = False
     total_start = time.perf_counter()
 
     for epoch in range(1, epochs + 1):
@@ -136,6 +149,7 @@ def train_model(
                 learning_rate * fine_tune_lr_multiplier,
                 weight_decay,
             )
+            patience_counter = 0  # fresh counter for the unfrozen phase
 
         train_metrics = train_one_epoch(
             model=model,
@@ -153,11 +167,14 @@ def train_model(
             desc=f"Validation {epoch}",
         )
 
-        if val_metrics["top1"] > best_val_top1:
+        improved = val_metrics["top1"] > best_val_top1
+        if improved:
             best_val_loss = val_metrics["loss"]
             best_val_top1 = val_metrics["top1"]
             best_val_top5 = val_metrics["top5"]
             best_val_epoch = epoch
+            best_state_dict = copy.deepcopy(model.state_dict())
+            patience_counter = 0
             if checkpoint_path is not None:
                 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(
@@ -172,6 +189,28 @@ def train_model(
                     },
                     checkpoint_path,
                 )
+        else:
+            # Count patience only after the warmup phase for freeze_then_unfreeze
+            in_patience_phase = training_strategy != "freeze_then_unfreeze" or epoch > frozen_epochs
+            if patience > 0 and in_patience_phase:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    stopped_early = True
+                    history.append(
+                        {
+                            "epoch": epoch,
+                            "phase": "train_val",
+                            "train_loss": train_metrics["loss"],
+                            "train_top1": train_metrics["top1"],
+                            "train_top5": train_metrics["top5"],
+                            "val_loss": val_metrics["loss"],
+                            "val_top1": val_metrics["top1"],
+                            "val_top5": val_metrics["top5"],
+                            "epoch_time": train_metrics["time"],
+                            "trainable_parameters": count_parameters(model, trainable_only=True),
+                        }
+                    )
+                    break
 
         history.append(
             {
@@ -188,6 +227,9 @@ def train_model(
             }
         )
 
+    # Restore the best-epoch weights before final evaluation
+    model.load_state_dict(best_state_dict)
+
     total_training_time = time.perf_counter() - total_start
     average_time = sum(float(row["epoch_time"]) for row in history) / max(1, len(history))
     return TrainingResult(
@@ -198,4 +240,6 @@ def train_model(
         best_val_epoch=best_val_epoch,
         total_training_time=total_training_time,
         average_time_per_epoch=average_time,
+        epochs_run=len(history),
+        stopped_early=stopped_early,
     )
