@@ -28,3 +28,6 @@ results/plots/*.pdf
 results/archive_pre_rerun/
 results/archive_pre_extension/
 results/archive_pre_smallcnn_rerun/
+
+# Compiled LaTeX output (generated artifact, not source)
+presentation_dl.pdf
