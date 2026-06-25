@@ -20,3 +20,9 @@ results/plots/*.pdf
 
 .ipynb_checkpoints/
 .vscode/
+
+# Claude Code local session data (worktrees, settings.local.json)
+.claude/
+
+# Pre-rerun result archive (data backup, not source)
+results/archive_pre_rerun/
