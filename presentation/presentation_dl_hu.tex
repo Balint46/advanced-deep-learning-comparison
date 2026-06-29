@@ -1,0 +1,393 @@
+\documentclass{beamer}
+\usetheme{Madrid}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[hungarian]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% A speaker notes második képernyőn való megjelenítéséhez törölje a megjegyzést az alábbi két sorból:
+% \usepackage{pgfpages}
+% \setbeameroption{show notes on second screen=right}
+
+\title[CNN vs.\ Transformer]{CNN és Transformer architektúrák összehasonlítása\\képosztályozási feladaton}
+\subtitle{Haladó mélytanulás --- Projektprezentáció}
+\author[B.~Kir\'{a}ly \& Sz.~Hoffmann]{Kir\'{a}ly B\'{a}lint \& Hoffmann Szabolcs}
+\institute{E\"{o}tv\"{o}s Lor\'{a}nd Tudom\'{a}nyegyetem}
+\date{2026. június}
+
+% Lábléc: szerző | rövid cím | dátum | dia/összesen
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=.333\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+      \usebeamerfont{author in head/foot}\insertshortauthor
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.334\paperwidth,ht=2.25ex,dp=1ex,center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}CNN vs.\ Transformer
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.166\paperwidth,ht=2.25ex,dp=1ex,center]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertshortdate
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.166\paperwidth,ht=2.25ex,dp=1ex,right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}%
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}
+    \end{beamercolorbox}%
+  }%
+  \vskip0pt%
+}
+
+\begin{document}
+
+% ---------------------------------------------------------------
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{A feladat}
+
+  \textbf{Cél:} Több CNN és Transformer modell összehasonlítása képosztályozási feladaton.
+
+  \bigskip
+  \textbf{Modellek:}
+  \begin{itemize}
+    \item Small CNN (nulláról tanítva)
+    \item ResNet-18 (ImageNeten előtanítva)
+    \item ViT-Tiny (ImageNeten előtanítva)
+  \end{itemize}
+
+  \bigskip
+  \textbf{Adathalmazok:} CIFAR-10 (10 osztály) és CIFAR-100 (100 osztály)
+
+  \bigskip
+  \textbf{Változók:} tanítási stratégia, osztályozófej mélysége és hiperparaméterek;
+  összehasonlítás több metrika alapján.
+
+  \note{Ez egy nyílt végű ``hasonlítsd össze a CNN-eket és a Transformereket'' feladat volt.
+  Ezt kontrollált ablációk sorozatává alakítottuk --- változtatva a tanítási stratégián,
+  a fejek mélységén és a hiperparamétereken --- hogy a modellek közötti különbségeket
+  a megfelelő oknak lehessen tulajdonítani, ne zavarják össze a tanítási receptek.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Kísérlet felállítása}
+
+  \begin{columns}
+    \column{0.55\textwidth}
+
+      \textbf{Modellek:}
+
+      \medskip
+      \small
+      \renewcommand{\arraystretch}{1.3}
+      \begin{tabular}{@{}lllr@{}}
+        \toprule
+        Modell     & Típus       & Előtan. & Paraméter \\
+        \midrule
+        small\_cnn & CNN         & Nem & 0,14\,M \\
+        ResNet-18  & CNN         & Igen & 11,2\,M \\
+        ViT-Tiny   & Transformer & Igen & 5,5\,M \\
+        \bottomrule
+      \end{tabular}
+
+    \column{0.42\textwidth}
+      \footnotesize
+      \textbf{Protokoll:}
+      \begin{itemize}
+        \item Korai leállítás (early stopping; 5 epoch-os türelmi idővel, maximum 20 epoch-ig); legjobb súlyok visszaállítása
+        \item 3 kiindulóérték (seed: 42\,/\,123\,/\,7): a hibasávok igazolják, hogy a modellek közötti sorrend valós
+        \item Minden összehasonlításnál: teljes finomhangolás + lineáris fej --- a különbségek a \emph{modellt} tükrözik, nem pedig a tanítási protokollt
+      \end{itemize}
+
+  \end{columns}
+
+  \note{Hangsúlyozzuk a kísérlet méltányos tervezését. A korai leállítás minden modellnek
+  azonos konvergencialehetőséget biztosít, a legjobb súlyok visszaállítása pedig garantálja,
+  hogy a közölt szám a tényleges csúcsot tükrözi, ne egy későbbi túlilleszkedett ellenőrzőpontot.
+  A három véletlen mag stabilitást igazol, nem szerencsés húzást. A rögzített tanítási feltétel
+  nélkülözhetetlen az attribúcióhoz: nem állítható, hogy egy architektúra legyőz egy másikat,
+  ha a tanítási receptek eltérnek.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Metrikák}
+
+  \textbf{Pontosság (Accuracy):} Top-1 és Top-5 validációs pontosság
+
+  \bigskip
+  \textbf{Veszteségfüggvény (Loss):} Legjobb validációs veszteség (keresztentrópia)
+
+  \bigskip
+  \textbf{Modellköltség (Cost):} Tanítható vs.\ összes paraméterszám;
+  epoch-onkénti futásidő; áteresztőképesség (minta/mp)
+
+  \bigskip
+  \textbf{Generalizációs rés (Gap):} Tanítási Top-1 $-$ Validációs Top-1
+
+  \bigskip
+  \textit{Megjegyzés:} A Top-5 metrika nem informatív a CIFAR-10 adathalmazon (10 osztály
+  $\Rightarrow$ $\approx$99\,\% minden modellnél), de fontossá válik a CIFAR-100-on.
+
+  \note{Magyarázzuk el, miért közöljük a Top-5-öt, de miért nem hangsúlyozzuk a CIFAR-10-en: mivel csak tíz osztály van, a helyes válasz szinte mindig szerepel minden modell első öt tippjében, így ez a metrika nem tesz különbséget köztük. A CIFAR-100-on viszont már hasznos másodlagos indikátorrá válik, amely tisztábban elkülöníti a modelleket, mint a Top-1 önmagában.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Fő összehasonlítás: CIFAR-10}
+
+  \begin{center}
+    \includegraphics[width=0.78\textwidth]{../results/plots/core_comparison_cifar10.png}
+  \end{center}
+
+  \small
+  \textbf{Azonos teljes finomhangolás esetén} (átlag\,$\pm$\,szórás, 3 kiindulóérték):
+  \begin{itemize}
+    \item ResNet-18: \textbf{85,5\,\%} \quad Small CNN: 81,3\,\% \quad ViT-Tiny: 69,4\,\%
+    \item Szűk hibasávok --- a sorrend valós, nem véletlen zajból ered
+  \end{itemize}
+
+  \note{Ez a fő eredmény. Jelentsük be egyértelműen, de azonnal jelezzük, hogy a ViT
+  alacsony száma a tanítási nehézséget tükrözi, nem az architektúra kapacitását.
+  A következő két dia szolgáltatja a bizonyítékot. Ne engedjük, hogy ezt úgy értelmezzék,
+  hogy ``a CNN-ek legyőzik a Transformereket'', amíg a közönség nem látta a teljes képet.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Tanítási dinamika}
+
+  \begin{center}
+    \includegraphics[width=0.80\textwidth]{../results/plots/convergence_curves_cifar10.png}
+  \end{center}
+
+  \small
+  \begin{itemize}
+    \item A ResNet-18 konvergál a leggyorsabban, és ennek a legkisebb a veszteség értéke a lelapulás után (plateau)
+    \item A ViT-Tiny a leglassabb, és végig ennek a legmagasabb a loss-a
+    \item A small\_cnn és a ViT-Tiny a 20. epoch-nál még mindig javulnak --- vagyis nem a konvergencia, hanem az epoch számra szánt keret állította meg őket
+  \end{itemize}
+
+  \note{Be honest here: ResNet-18 genuinely plateaus, but small\_cnn and ViT-Tiny
+  are still slowly declining at epoch 20 --- they hit the training budget, not a
+  true minimum. This means their reported accuracies slightly underestimate their
+  potential. The ordering is still clear and the comparison is valid, but ``converged''
+  would be the wrong word for two of the three models.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{A tanítási stratégia számít}
+
+  \begin{center}
+    \includegraphics[width=0.72\textwidth]{../results/plots/strategy_comparison_cifar10.png}
+  \end{center}
+
+  \footnotesize
+  \begin{itemize}
+    \item ResNet-18: teljes 85,5\,\% \;/\; freeze$\!\to\!$unfreeze 80,7\,\% \;/\; csak fej 41,5\,\%
+    \item ViT-Tiny:\phantom{x} teljes 71,4\,\% \;/\; freeze$\!\to\!$unfreeze 79,7\,\% \;/\; csak fej 40,0\,\%
+    \item Csak-fej $\approx$40\,\% mindkét modellnél: fagyasztott ImageNet jellemzők nem transzferálódnak 32$\times$32-es CIFAR képekre
+    \item A ViT \emph{profitál} a freeze$\!\to\!$unfreeze stratégiából; a ResNet-nek nincs rá szüksége
+  \end{itemize}
+
+  \note{A csak-fejes kudarc mindkét modellnél ugyanarra az elvi pontra mutat: az ImageNet
+  (224$\times$224) és a CIFAR (32$\times$32) közötti méretbeli eltérés miatt a fagyasztott
+  backbone jellemzők rossz léptékűek. Érdekesebb, hogy a ViT lényegesen profitál a fokozatos
+  kiolvasztásból, míg a ResNet nem --- korai jele, hogy a ViT optimalizálása érzékenyebb
+  a tanítás szerkezetére.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Fő megállapítás: A ViT lemaradása taníthatósági melléktermék}
+
+  \begin{center}
+    \includegraphics[width=0.65\textwidth]{../results/plots/vit_lr_sensitivity_cifar10.png}
+  \end{center}
+
+  \small
+  \textbf{ViT-Tiny teljes finomhangolása, változó tanulási rátán:}
+  \begin{itemize}
+    \item lr $10^{-3}$ $\to$ 71,4\,\% \quad lr $3{\times}10^{-4}$ $\to$ 77,8\,\% \quad lr $10^{-4}$ $\to$ 79,7\,\%
+    \item Kisebb lr $\approx$8 százalékos javulást hoz --- majdnem beérve a CNN-eket
+    \item A freeze$\!\to\!$unfreeze önállóan is ugyanezt a $\approx$80\,\%-ot éri el
+  \end{itemize}
+
+  \textit{Következtetés: A ViT-Tiny rendkívül érzékeny a finomhangolásra;
+  lr $10^{-3}$ túl agresszív --- a CNN-ek nem feltétlen győzik le a Transformereket.}
+
+  \note{Ez az előadás intellektuálisan őszinte középpontja. Két egymástól teljesen független
+  bizonyítékvonal --- a tanulási ráta csökkentése és a fokozatos kiolvasztás alkalmazása ---
+  egyaránt arra konvergál, hogy a ViT $\approx$80\,\%-ot ér el, lecsökkentve a résnek
+  döntő részét a ResNethez képest. A gyengeség az optimalizálási stratégiában rejlik,
+  nem az architektúra kapacitásában. Ezt a pontot tegyük explicitté, mielőtt továbbmegyünk.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Az osztályozó fej mélysége}
+
+  \begin{center}
+    \includegraphics[width=0.80\textwidth]{../results/plots/head_depth_cifar10.png}
+  \end{center}
+
+  \small
+  \begin{itemize}
+    \item Lineáris / egy-rejtett / két-rejtett rétegű fej: különbség $\lesssim$1 százalék Small CNN és ResNet-18 esetén
+    \item A mélyebb fejek \emph{rontják} a ViT-Tiny teljesítményét: 71,4\,\% $\to$ 66,8\,\%
+    \item Egyetlen lineáris fej elegendő; extra kapacitás növeli a túlillesztési kockázatot
+  \end{itemize}
+
+  \note{Gyors dia, tiszta negatív eredménnyel. Rejtett rétegek hozzáadása az osztályozófejhez
+  nem segít, a ViT esetén pedig egyenesen árt --- valószínűleg azért, mert a mélyebb fej
+  felerősíti ugyanazt az optimalizálási instabilitást, amelyet a tanulási ráta diájánál láttunk.
+  A gyakorlati alapértelmezett egy egyszerű lineáris osztályozó a backbone tetején.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Hiperparaméter-érzékenység}
+
+  \begin{center}
+    \includegraphics[width=0.72\textwidth]{../results/plots/hp_sensitivity_resnet18.png}
+  \end{center}
+
+  \small
+  \textbf{ResNet-18 freeze$\!\to\!$unfreeze, változó lr és batch size:}
+  \begin{itemize}
+    \item A tanulási ráta dominál: 60\,\% $\to$ 72\,\% $\to$ 81\,\%
+          (lr $10^{-4}$ / $3{\times}10^{-4}$ / $10^{-3}$)
+    \item A 64-es vs.\ 128-as batch size hatása elhanyagolható minden lr-szinten
+    \item \textbf{Fő tanulság:} a hangolási keretet a tanulási rátára érdemes fordítani
+  \end{itemize}
+
+  \note{Ez közvetlenül kapcsolódik a ViT tanulási ráta diájához: minden modellnél az lr
+  a domináns beállítási paraméter. A kötegméret lényegesen kevesebbet számít. Ha korlátozott
+  hangolási kerettel rendelkezünk bármilyen képosztályozási transzfertanulási feladatnál,
+  a tanulási ráta mindig az első és legfontosabb tényező, amelyet be kell állítani.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Skálázás nehezebb adathalmazra: CIFAR-100}
+
+  \begin{columns}
+    \column{0.50\textwidth}
+      \includegraphics[width=\textwidth]{../results/plots/dataset_scaling.png}
+    \column{0.48\textwidth}
+      \includegraphics[width=\textwidth]{../results/plots/top5_cifar100.png}
+  \end{columns}
+
+  \medskip
+  \small
+  \textbf{CIFAR-10 $\to$ CIFAR-100:}
+  ResNet 85,5\,\% $\to$58,6\,\% \,/\, Small CNN 82,2\,\% $\to$55,0\,\% \,/\, ViT 71,4\,\% $\to$43,2\,\%
+
+
+  \begin{itemize}
+    \item Minden modellnél $\approx$25--30 százalék visszaesés; \textbf{a sorrend megőrződik}
+    \item Top-5 CIFAR-100-on (84,5\,\%\,/\,83,2\,\%\,/\,72,8\,\%) leginformatívabb
+    \item Nagy modellek túltanulnak (rés: ResNet $+18{,}6$, ViT $+16{,}7$)
+    \item A small\_cnn 60 epochnál még javult; 55,0\,\% kissé alulbecsli az aszimptotát (a sorrendet nem érinti)
+  \end{itemize}
+
+  \note{A megőrzött sorrendet adjuk elő fő robusztus állításként --- ez egy lényegesen
+  nehezebb, 100 osztályos feladaton is helytáll. Majd tárjuk fel az őszinte korlátokat:
+  a nagy előtanított modellek túlilleszkednek CIFAR-100-on, ami arra utal, hogy
+  regularizáció vagy adatbővítés segítene, a kis CNN pedig nem konvergált teljesen.
+  Egyik fenntartás sem változtatja meg, melyik modell a legjobb; ezek őszinte megjegyzések
+  a jövőbeli munkához.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Hatékonyság: Pontosság vs.\ Költség}
+
+  \begin{columns}
+    \column{0.50\textwidth}
+      \includegraphics[width=\textwidth]{../results/plots/params_vs_accuracy_cifar10.png}
+    \column{0.48\textwidth}
+      \includegraphics[width=\textwidth]{../results/plots/average_time_per_epoch_by_model.png}
+  \end{columns}
+
+  \medskip
+  \small
+  \begin{itemize}
+    \item \textbf{small CNN:} $\sim$0,14\,M paraméter, $\sim$25\,s/epoch, 81\,\% --- kiemelkedően hatékony
+    \item \textbf{ResNet-18:} legjobb pontosság (85,5\,\%), 11,2\,M paraméter / $\sim$49\,s/epoch
+    \item \textbf{ViT-Tiny:} több paraméter és több idő a small CNN-nél, mégis alacsonyabb pontosság naiv tanítással
+  \end{itemize}
+
+  \note{Pontosság--költség kompromisszumként keretezzük. A kis CNN a projekt hatékonysági
+  meglepetése: ekkora adathalmaz-léptéken egy kis, jól megtervezett CNN messze felülmúlja
+  a méretéhez képest elvárható teljesítményt. A ResNet pontossági szempontból nyer, de
+  80-szorosára növelt paraméterszámmal. A ViT költséghatékonysága lényegesen javul, amint
+  a tanulási rátát beállítják --- ezért a ViT-et a legjobb beállítása alapján ítéljük meg,
+  ne a naiv alapértelmezés szerint.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Következtetések}
+
+  \footnotesize
+  \begin{itemize}\setlength{\itemsep}{1pt}
+    \item Azonos feltételek melletti teljes finomhangolás esetén:
+          \textbf{ResNet-18 $>$ small CNN $>$ ViT-Tiny} a CIFAR-10-en
+    \item A ViT lemaradása nagyrészt \textbf{taníthatósági melléktermék}: kisebb lr vagy
+          freeze$\!\to\!$unfreeze a hátrány nagy részét ledolgozza
+    \item \textbf{A transzferstratégia számít} és modellfüggő;
+          fagyasztott ImageNet jellemzők önmagukban gyengék CIFAR-on
+    \item A fejek mélysége alig számít;
+          \textbf{a tanulási ráta a domináns hiperparaméter}
+    \item A nehezebb adathalmaz (CIFAR-100) \textbf{megőrzi a sorrendet};
+          a nagy modellek ott túltanulnak
+    \item \textbf{Módszertanilag:} korai leállítás + legjobb súlyok visszaállítása +
+          több kiindulóértékű hibasávok teszik az összehasonlítást korrektté és megbízhatóvá
+  \end{itemize}
+
+  \note{Szenteljünk időt ennek a diának. Menjünk végig minden egyes ponton, egy mondatban:
+  mondjuk ki a megállapítást, majd annak jelentőségét. Időzzünk el a módszertani pontnál
+  a végén --- ezen kontrollok nélkül (korai leállítás, legjobb súlyok, több véletlen mag)
+  az összehasonlítás nem lenne meggyőző, és ezek tudatos tervezési döntések voltak, nem
+  alapértelmezések.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Mesterséges intelligencia használata}
+
+  \textbf{Transzparencia-nyilatkozat:}
+
+  \small
+  A projekt alábbi területein alkalmaztunk AI eszközöket:
+  \begin{itemize}
+    \item \textbf{Kód és pipeline:} a tanítási és kiértékelési pipeline-t iteratívan,
+          AI segítséggel építettük fel; minden változást átvizsgáltunk,
+          a hibákat diagnosztizáltuk, és minden újratervezési kört irányítottunk
+    \item \textbf{Prezentáció:} ezen diák alapjait AI generálta a mi tartalmunk és elvárásaink alapján, majd mi hoztuk kézzel a végleges állapotára
+  \end{itemize}
+
+  \medskip
+  \textit{A kísérleteket mi terveztük, azonosítottuk az alultanítási problémát,
+  irányítottuk a teljes újrafuttatást, és minden eredményt ellenőriztünk.
+  Minden értelmezés a miénk.}
+
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Köszönjük!}
+
+  \begin{center}
+    \vspace{1cm}
+    \Large Kérdések?
+  \end{center}
+
+\end{frame}
+
+\end{document}
